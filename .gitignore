@@ -1,0 +1,6 @@
+context/
+operational_hub_app/.env
+operational_hub_app/.venv/
+operational_hub_app/frontend/node_modules/
+operational_hub_app/frontend/dist/
+operational_hub_app/__pycache__/

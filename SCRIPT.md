@@ -296,4 +296,4 @@ Leave on screen while people leave. **Read a few answers aloud.** End on a real 
 
 
 
-*Run-of-show prepared March 2026 · Teresa Nascimento + Galiya Warrier · Snowflake · Women in Data*
+*Run-of-show prepared March 2026 · Snowflake · Women in Data*

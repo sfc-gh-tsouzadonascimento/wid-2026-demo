@@ -1,9 +1,9 @@
 # The Future You — A Day in the Life of a Data Professional in 2028
 
 **Women in Data 2026 · Live Demo Session**\
-*Teresa Nascimento + Galiya Warrier · Snowflake*
+*Snowflake*
 
-A 60-minute live demo session following a fictional senior data professional through a day at RetailBank 2028. Every scene is a live Snowflake demo showcasing a different AI capability — from agentic briefings to building and shipping an app on stage.
+A 60-minute live demo session following a fictional senior data professional through a day at FrostBank 2028. Every scene is a live Snowflake demo showcasing a different AI capability — from agentic briefings to building and shipping an app on stage.
 
 ---
 
@@ -67,13 +67,23 @@ wid-2026-demo/
 ├── scripts/
 │   ├── 04_generate_pdfs.py       # Generate 30 synthetic compliance PDFs
 │   └── requirements.txt          # fpdf2, snowflake-connector-python
-├── audience_app/
-│   ├── app.py                    # FastAPI backend (Cortex Agent REST API)
+├── operational_hub_app/
+│   ├── app.py                    # FastAPI backend (Cortex Agent REST API + metrics)
+│   ├── build.sh                  # Build frontend and start the app
 │   ├── requirements.txt          # fastapi, uvicorn, httpx, etc.
+│   ├── Dockerfile                # Container deployment
 │   ├── .env.example              # Snowflake connection template
-│   └── static/
-│       ├── audience.html         # Mobile-first question submission form
-│       └── presenter.html        # Full-screen live Q&A feed (SSE)
+│   └── frontend/                 # React + Vite SPA
+│       ├── index.html
+│       ├── vite.config.js
+│       ├── package.json
+│       └── src/
+│           ├── App.jsx           # Main component (dashboard + agent chat)
+│           ├── App.css
+│           ├── main.jsx
+│           ├── index.css
+│           └── assets/
+│               └── snowflake-bug-color-rgb.svg
 ├── docs/
 │   └── scene5_prompts.md         # Pre-tested Cortex Code prompts for Scene 5
 ├── assets/
@@ -216,46 +226,37 @@ Run `sql/07_create_agent.sql`. Creates `OPERATIONS_AGENT` with two tools:
 
 ---
 
-## Audience Q&A App
+## FrostBank Operational Intelligence Hub
 
-A lightweight FastAPI web app that lets audience members ask questions to the OPERATIONS_AGENT during Scene 3 (or any time).
+A React + FastAPI web app that shows live operational metrics (with trend indicators) and lets audience members ask questions to the OPERATIONS_AGENT during the demo.
 
-### Setup and run via Cortex Code
-
-```
-Set up and start the audience Q&A app from the audience_app/ directory.
-Install the Python dependencies from audience_app/requirements.txt, then
-copy audience_app/.env.example to audience_app/.env and ask me for the
-Snowflake credentials to fill in. Once the .env is configured, start the
-FastAPI server with: uvicorn app:app --host 0.0.0.0 --port 8000
-from the audience_app directory.
-```
-
-### Manual setup
+### Quick start
 
 ```bash
-cd audience_app
-pip install -r requirements.txt
+cd operational_hub_app
+./build.sh
+```
+
+This creates a Python virtual environment, installs dependencies, builds the React frontend, and starts the server on `http://localhost:8080`.
+
+Before running, copy `.env.example` to `.env` and fill in your Snowflake credentials:
+
+```bash
 cp .env.example .env
-# Edit .env with your Snowflake credentials
+# Edit .env with your Snowflake connection details
 ```
 
-### Run locally
+### What it shows
 
-```bash
-cd audience_app
-uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-- **Audience view:** `http://localhost:8000/` — mobile-first form for submitting questions
-- **Presenter view:** `http://localhost:8000/presenter` — full-screen live Q&A feed (SSE)
+- **Metrics dashboard** — transaction volume, average transaction value, customer risk, anomaly detection, and fraud alert stats with up/down trend arrows compared to the previous day
+- **Agent chat** — audience selects from pre-approved questions and the OPERATIONS_AGENT responds via SSE streaming
 
 ### Public hosting for the conference
 
 **Recommended: ngrok** (simplest for a conference setting)
 
 ```bash
-ngrok http 8000
+ngrok http 8080
 ```
 
 Share the ngrok URL with the audience via QR code. No deployment needed.
@@ -275,4 +276,4 @@ DROP WAREHOUSE IF EXISTS WID_DEMO_WH;
 
 ---
 
-*Session blueprint prepared March 2026 · Teresa Nascimento + Galiya Warrier · Snowflake · Women in Data*
+*Session blueprint prepared March 2026 · Snowflake · Women in Data*

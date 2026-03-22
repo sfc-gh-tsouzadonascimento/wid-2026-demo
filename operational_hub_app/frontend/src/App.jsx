@@ -2,18 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import './App.css'
 import snowflakeLogo from './assets/snowflake-bug-color-rgb.svg'
 
-const QUESTIONS = [
-  { icon: "\u{1F4CA}", text: "What are the top-performing regions by transaction volume this month?" },
-  { icon: "\u{1F4B3}", text: "Break down transaction volumes across all regions for this week" },
-  { icon: "\u{1F4C9}", text: "Which customers are most likely to churn based on current risk scores?" },
-  { icon: "\u{1F50D}", text: "Are there any unusual patterns in recent transaction data?" },
-  { icon: "\u{1F3E6}", text: "How does our customer base break down by segment and risk level?" },
-  { icon: "\u{1F4CB}", text: "Summarize the latest compliance findings and recommended actions" },
-  { icon: "\u{1F464}", text: "Show me the high-value customers with declining activity" },
-  { icon: "\u{1F6E1}\uFE0F", text: "How many fraud alerts were auto-resolved vs escalated to humans?" },
-  { icon: "\u{26A0}\uFE0F", text: "What does the AML risk landscape look like across our reports?" },
-  { icon: "\u{1F4C8}", text: "Give me a trend analysis of transaction values over the past week" },
-]
+const QUESTIONS = []
 
 const SnowflakeLogo = () => (
   <img src={snowflakeLogo} alt="Snowflake" width="24" height="24" />
@@ -43,13 +32,44 @@ function TrendArrow({ direction }) {
 }
 
 function Dashboard({ metrics, loading }) {
-  const cards = [
-    { key: "total_transactions", label: "Total Transactions", value: metrics?.total_transactions, format: "number" },
-    { key: "total_value", label: "Transaction Volume", value: metrics?.total_value, format: "currency" },
-    { key: "avg_transaction_value", label: "Avg Transaction Value", value: metrics?.avg_transaction_value, format: "currency" },
-    { key: "high_risk_customers", label: "High-Risk Customers", value: metrics?.high_risk_customers, format: "number", alert: true },
-    { key: "anomaly_count", label: "Anomalies Detected", value: metrics?.anomaly_count, format: "number", alert: metrics?.anomaly_count > 0 },
-    { key: "fraud_alerts", label: "Fraud Alerts", value: metrics?.fraud_alerts, format: "number", alert: metrics?.fraud_alerts > 0 },
+  const sections = [
+    {
+      label: "Pipeline Health",
+      cards: [
+        { key: "pipelines_run_24h", label: "Pipelines Run (24h)", value: metrics?.pipelines_run_24h, format: "number" },
+        { key: "pipeline_success_rate", label: "Success Rate", value: metrics?.pipeline_success_rate, format: "percent" },
+        { key: "records_processed_24h", label: "Records Processed", value: metrics?.records_processed_24h, format: "number" },
+        { key: "avg_pipeline_duration", label: "Avg Duration (s)", value: metrics?.avg_pipeline_duration, format: "number" },
+        { key: "ai_generated_pipelines", label: "AI-Generated Runs", value: metrics?.ai_generated_pipelines, format: "number" },
+      ],
+    },
+    {
+      label: "Transaction Activity",
+      cards: [
+        { key: "total_transactions", label: "Total Transactions", value: metrics?.total_transactions, format: "number" },
+        { key: "total_value", label: "Transaction Volume", value: metrics?.total_value, format: "currency" },
+        { key: "avg_transaction_value", label: "Avg Txn Value", value: metrics?.avg_transaction_value, format: "currency" },
+        { key: "daily_pct_change", label: "Daily vs 7d Avg", value: metrics?.daily_pct_change, format: "percent" },
+      ],
+    },
+    {
+      label: "Customer Metrics",
+      cards: [
+        { key: "total_customers", label: "Total Customers", value: metrics?.total_customers, format: "number" },
+        { key: "active_accounts", label: "Active Accounts", value: metrics?.active_accounts, format: "number" },
+        { key: "customers_at_risk", label: "Customers at Risk", value: metrics?.customers_at_risk, format: "number" },
+        { key: "avg_churn_risk", label: "Avg Churn Score", value: metrics?.avg_churn_risk, format: "number" },
+      ],
+    },
+    {
+      label: "Detection & Monitoring",
+      cards: [
+        { key: "anomaly_count", label: "Anomalies Detected", value: metrics?.anomaly_count, format: "number" },
+        { key: "fraud_alerts", label: "Fraud Alerts", value: metrics?.fraud_alerts, format: "number" },
+        { key: "fraud_auto_resolved", label: "Auto-Resolved", value: metrics?.fraud_auto_resolved, format: "number" },
+        { key: "fraud_escalated", label: "Escalated to Human", value: metrics?.fraud_escalated, format: "number" },
+      ],
+    },
   ]
 
   const asOf = metrics?.as_of
@@ -59,20 +79,25 @@ function Dashboard({ metrics, loading }) {
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h2 className="dashboard-title">Metrics Live</h2>
+        <h2 className="dashboard-title">Overnight Batch Results</h2>
         {asOf && <span className="dashboard-date">As of {asOf}</span>}
       </div>
-      <div className="dashboard-grid">
-        {cards.map((card, i) => (
-          <div key={i} className={`metric-card${card.alert ? ' alert' : ''}`}>
-            <div className="metric-value">
-              {loading ? '\u2014' : formatMetric(card.value, card.format)}
-              {!loading && metrics?.trends && <TrendArrow direction={metrics.trends[card.key]} />}
-            </div>
-            <div className="metric-label">{card.label}</div>
+      {sections.map((section, si) => (
+        <div key={si} className="metric-section">
+          <div className="metric-section-label">{section.label}</div>
+          <div className="dashboard-grid">
+            {section.cards.map((card, ci) => (
+              <div key={ci} className="metric-card">
+                <div className="metric-value">
+                  {loading ? '\u2014' : formatMetric(card.value, card.format)}
+                  {!loading && metrics?.trends && <TrendArrow direction={metrics.trends[card.key]} />}
+                </div>
+                <div className="metric-label">{card.label}</div>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -320,24 +345,25 @@ function App() {
         <main className="main">
           <div className="hero-text">
             <h1>Operational Intelligence <span>Hub</span></h1>
-            <p>Single View of Business Performance and Operational Health</p>
           </div>
           <Dashboard metrics={metrics} loading={metricsLoading} />
-          <div className="questions-grid">
-            {QUESTIONS.map((q, i) => (
-              <div
-                key={i}
-                className="question-card"
-                onClick={() => askQuestion(q.text)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => e.key === 'Enter' && askQuestion(q.text)}
-              >
-                <div className="card-icon">{q.icon}</div>
-                <div className="card-text">{q.text}</div>
-              </div>
-            ))}
-          </div>
+          {QUESTIONS.length > 0 && (
+            <div className="questions-grid">
+              {QUESTIONS.map((q, i) => (
+                <div
+                  key={i}
+                  className="question-card"
+                  onClick={() => askQuestion(q.text)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => e.key === 'Enter' && askQuestion(q.text)}
+                >
+                  <div className="card-icon">{q.icon}</div>
+                  <div className="card-text">{q.text}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </main>
       ) : (
         <main className="answer-view">

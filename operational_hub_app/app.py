@@ -29,18 +29,7 @@ AGENT_DB = "RETAILBANK_2028"
 AGENT_SCHEMA = "PUBLIC"
 AGENT_NAME = "OPERATIONS_AGENT"
 
-ALLOWED_QUESTIONS = [
-    "What are the top-performing regions by transaction volume this month?",
-    "Break down transaction volumes across all regions for this week",
-    "Which customers are most likely to churn based on current risk scores?",
-    "Are there any unusual patterns in recent transaction data?",
-    "How does our customer base break down by segment and risk level?",
-    "Summarize the latest compliance findings and recommended actions",
-    "Show me the high-value customers with declining activity",
-    "How many fraud alerts were auto-resolved vs escalated to humans?",
-    "What does the AML risk landscape look like across our reports?",
-    "Give me a trend analysis of transaction values over the past week",
-]
+ALLOWED_QUESTIONS = []
 
 _ALLOWED_SET = {q.lower().strip() for q in ALLOWED_QUESTIONS}
 
@@ -258,16 +247,67 @@ async def health():
 
 @app.get("/api/metrics")
 async def get_metrics():
-    """Return operational metrics for the dashboard with trend indicators."""
+    """Return expanded operational metrics for the dashboard."""
     try:
         conn = _get_connection()
         cur = conn.cursor()
 
-        # Latest date in data and previous date for trend comparison
+        # ── Latest date ──────────────────────────────────────────
         cur.execute(
             "SELECT MAX(TRANSACTION_DATE) FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS"
         )
         latest_date = cur.fetchone()[0]
+
+        # ── PIPELINE HEALTH ──────────────────────────────────────
+        # Pipelines run in last 24h
+        cur.execute(
+            "SELECT COUNT(*) FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS "
+            "WHERE RUN_TIMESTAMP >= DATEADD(HOUR, -24, CURRENT_TIMESTAMP())"
+        )
+        pipelines_run_24h = int(cur.fetchone()[0] or 0)
+
+        # Pipeline success rate (all time)
+        cur.execute(
+            "SELECT COUNT(*), "
+            "SUM(CASE WHEN STATUS = 'SUCCESS' THEN 1 ELSE 0 END) "
+            "FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS"
+        )
+        row = cur.fetchone()
+        total_runs = int(row[0] or 0)
+        success_runs = int(row[1] or 0)
+        pipeline_success_rate = round((success_runs / total_runs) * 100, 1) if total_runs > 0 else 0
+
+        # Total records processed (last 24h)
+        cur.execute(
+            "SELECT SUM(RECORDS_PROCESSED) FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS "
+            "WHERE RUN_TIMESTAMP >= DATEADD(HOUR, -24, CURRENT_TIMESTAMP())"
+        )
+        records_processed_24h = int(cur.fetchone()[0] or 0)
+
+        # Avg pipeline duration (seconds)
+        cur.execute(
+            "SELECT ROUND(AVG(DURATION_SECONDS), 0) "
+            "FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS "
+            "WHERE STATUS = 'SUCCESS'"
+        )
+        avg_pipeline_duration = int(cur.fetchone()[0] or 0)
+
+        # AI-generated pipelines
+        cur.execute(
+            "SELECT COUNT(*) FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS "
+            "WHERE AI_GENERATED = TRUE"
+        )
+        ai_generated_pipelines = int(cur.fetchone()[0] or 0)
+
+        # ── TRANSACTION ACTIVITY ─────────────────────────────────
+        # Total transactions (all time)
+        cur.execute(
+            "SELECT SUM(TRANSACTION_COUNT), SUM(TRANSACTION_VALUE) "
+            "FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS"
+        )
+        row = cur.fetchone()
+        total_transactions = int(row[0] or 0)
+        total_value = float(row[1] or 0)
 
         # Today's metrics
         cur.execute(
@@ -280,7 +320,7 @@ async def get_metrics():
         today_transactions = int(row[0] or 0)
         today_value = float(row[1] or 0)
 
-        # Previous day metrics
+        # Previous day metrics (for trends)
         cur.execute(
             "SELECT SUM(TRANSACTION_COUNT), SUM(TRANSACTION_VALUE) "
             "FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS "
@@ -291,28 +331,54 @@ async def get_metrics():
         prev_transactions = int(row[0] or 0)
         prev_value = float(row[1] or 0)
 
-        # Total aggregates
-        cur.execute(
-            "SELECT SUM(TRANSACTION_COUNT), SUM(TRANSACTION_VALUE) "
-            "FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS"
-        )
-        row = cur.fetchone()
-        total_transactions = int(row[0] or 0)
-        total_value = float(row[1] or 0)
-
-        # Average transaction value (today vs prev)
+        # Avg transaction value (today vs prev)
         today_avg = (today_value / today_transactions) if today_transactions > 0 else 0
         prev_avg = (prev_value / prev_transactions) if prev_transactions > 0 else 0
 
+        # Daily % change vs 7-day avg (latest date, all regions avg)
         cur.execute(
-            "SELECT COUNT(*), "
-            "SUM(CASE WHEN CHURN_RISK_SCORE > 0.7 THEN 1 ELSE 0 END) "
+            "SELECT ROUND(AVG(PCT_CHANGE_VS_7DAY_AVG), 2) "
+            "FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS "
+            "WHERE TRANSACTION_DATE = %s",
+            (latest_date,),
+        )
+        daily_pct_change = float(cur.fetchone()[0] or 0)
+
+        # ── CUSTOMER METRICS ─────────────────────────────────────
+        # Total unique customers
+        cur.execute(
+            "SELECT COUNT(DISTINCT CUSTOMER_ID) "
             "FROM RETAILBANK_2028.PUBLIC.CUSTOMERS"
         )
-        row = cur.fetchone()
-        total_customers = int(row[0] or 0)
-        high_risk_customers = int(row[1] or 0)
+        total_customers = int(cur.fetchone()[0] or 0)
 
+        # Active accounts
+        cur.execute(
+            "SELECT COUNT(DISTINCT ACCOUNT_ID) "
+            "FROM RETAILBANK_2028.PUBLIC.CUSTOMERS"
+        )
+        active_accounts = int(cur.fetchone()[0] or 0)
+
+        # Customers at risk of churn — BUGGY QUERY (matches the pipeline bug)
+        # Counts rows instead of distinct customers → ~813 vs correct ~325
+        # Because one customer has multiple accounts, each account row is
+        # counted separately, inflating the number ~2.5×.
+        cur.execute(
+            "SELECT COUNT(*) "
+            "FROM RETAILBANK_2028.PUBLIC.CUSTOMERS "
+            "WHERE CHURN_RISK_SCORE > 0.6"
+        )
+        customers_at_risk = int(cur.fetchone()[0] or 0)
+
+        # Avg churn risk score
+        cur.execute(
+            "SELECT ROUND(AVG(CHURN_RISK_SCORE), 3) "
+            "FROM RETAILBANK_2028.PUBLIC.CUSTOMERS"
+        )
+        avg_churn_risk = float(cur.fetchone()[0] or 0)
+
+        # ── DETECTION & MONITORING ───────────────────────────────
+        # Anomalies detected
         cur.execute(
             "SELECT COUNT(*), "
             "SUM(CASE WHEN IS_ANOMALY THEN 1 ELSE 0 END) "
@@ -322,37 +388,69 @@ async def get_metrics():
         total_checked = int(row[0] or 0)
         anomaly_count = int(row[1] or 0)
 
-        # Fraud alerts (from PIPELINE_RUNS fraud monitor)
+        # Fraud alerts (from PIPELINE_RUNS fraud monitor — last run)
         cur.execute(
-            "SELECT SUM(AUTO_RESOLVED_COUNT), SUM(HUMAN_ESCALATED_COUNT) "
+            "SELECT AUTO_RESOLVED_COUNT, HUMAN_ESCALATED_COUNT "
             "FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS "
-            "WHERE PIPELINE_NAME = 'FRAUD_ALERT_MONITOR'"
+            "WHERE PIPELINE_NAME = 'FRAUD_ALERT_MONITOR' "
+            "ORDER BY RUN_TIMESTAMP DESC LIMIT 1"
         )
         row = cur.fetchone()
-        fraud_auto_resolved = int(row[0] or 0)
-        fraud_escalated = int(row[1] or 0)
+        fraud_auto_resolved = int(row[0] or 0) if row else 0
+        fraud_escalated = int(row[1] or 0) if row else 0
         fraud_alerts = fraud_auto_resolved + fraud_escalated
 
         cur.close()
 
+        def trend(a, b):
+            if a > b:
+                return "up"
+            if a < b:
+                return "down"
+            return "flat"
+
         return {
             "as_of": str(latest_date),
+            # Pipeline Health
+            "pipelines_run_24h": pipelines_run_24h,
+            "pipeline_success_rate": pipeline_success_rate,
+            "records_processed_24h": records_processed_24h,
+            "avg_pipeline_duration": avg_pipeline_duration,
+            "ai_generated_pipelines": ai_generated_pipelines,
+            # Transaction Activity
             "total_transactions": total_transactions,
             "total_value": total_value,
             "avg_transaction_value": round(today_avg, 2),
+            "daily_pct_change": daily_pct_change,
+            # Customer Metrics
             "total_customers": total_customers,
-            "high_risk_customers": high_risk_customers,
+            "active_accounts": active_accounts,
+            "customers_at_risk": customers_at_risk,
+            "avg_churn_risk": avg_churn_risk,
+            # Detection & Monitoring
             "anomaly_count": anomaly_count,
-            "total_checked": total_checked,
             "fraud_alerts": fraud_alerts,
             "fraud_auto_resolved": fraud_auto_resolved,
+            "fraud_escalated": fraud_escalated,
+            # Trends
             "trends": {
-                "total_transactions": "up" if today_transactions > prev_transactions else ("down" if today_transactions < prev_transactions else "flat"),
-                "total_value": "up" if today_value > prev_value else ("down" if today_value < prev_value else "flat"),
-                "avg_transaction_value": "up" if today_avg > prev_avg else ("down" if today_avg < prev_avg else "flat"),
-                "high_risk_customers": "up" if high_risk_customers > 0 else "flat",
+                "pipelines_run_24h": "flat",
+                "pipeline_success_rate": "up" if pipeline_success_rate >= 95 else "down",
+                "records_processed_24h": "flat",
+                "avg_pipeline_duration": "flat",
+                "ai_generated_pipelines": "flat",
+                "total_transactions": trend(today_transactions, prev_transactions),
+                "total_value": trend(today_value, prev_value),
+                "avg_transaction_value": trend(today_avg, prev_avg),
+                "daily_pct_change": "up" if daily_pct_change > 0 else ("down" if daily_pct_change < 0 else "flat"),
+                "total_customers": "flat",
+                "active_accounts": "flat",
+                "customers_at_risk": "up",
+                "avg_churn_risk": "flat",
                 "anomaly_count": "up" if anomaly_count > 0 else "flat",
-                "fraud_alerts": "up" if fraud_alerts > fraud_auto_resolved else "flat",
+                "fraud_alerts": "flat",
+                "fraud_auto_resolved": "flat",
+                "fraud_escalated": "flat",
             },
         }
     except Exception as e:

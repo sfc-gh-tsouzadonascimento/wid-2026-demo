@@ -52,14 +52,6 @@ instructions:
     For questions about compliance reports, regulatory findings, or documents: use ComplianceSearch.
     For morning briefings or summary requests: use BankAnalyst to get data, then summarise.
 
-sample_questions:
-  - question: "Give me the overnight briefing"
-  - question: "Which customer segments have the highest churn risk among our top 50 accounts?"
-  - question: "Are there any reports flagging increased AML risk in Q1?"
-  - question: "Show me the raw fraud alert counts from last night"
-  - question: "What are the top three compliance actions recommended across all reports?"
-  - question: "Show me overnight anomalies detected by the ML model"
-
 tools:
   - tool_spec:
       type: "cortex_analyst_text_to_sql"
@@ -82,6 +74,9 @@ tools:
 tool_resources:
   BankAnalyst:
     semantic_view: "RETAILBANK_2028.PUBLIC.BANK_ANALYTICS"
+    execution_environment:
+      type: "warehouse"
+      warehouse: "WID_DEMO_WH"
   ComplianceSearch:
     name: "RETAILBANK_2028.PUBLIC.COMPLIANCE_REPORTS_SEARCH"
     max_results: 5

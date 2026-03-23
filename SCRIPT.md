@@ -9,14 +9,14 @@ Women in Data 2026 · 60 minutes · Live demo
 
 ### Pre-requisites
 
-- Snowsight open, logged into demo account (`SFSEEUROPE-DEMO_TNASCIMENTO_US`)
+- Run `sql/reset_demo.sql` via Snowsight worksheet (or `snow sql -c wid26_demo -f sql/reset_demo.sql`). This re-anchors timestamps, redistributes churn scores, creates the buggy CUSTOMERS view, recreates the agent without ComplianceSearch, and drops the search service. Verify the output shows ~815 (buggy) / ~325 (raw).
+- Snowsight open, logged into demo account (`SFSEEUROPE-WID26_DEMO`)
 - Intelligence tab ready (ensure OPERATIONS_AGENT is active — but **without** the ComplianceSearch tool yet; it gets added live in Scene 2)
 - `REPORT_PARSED` and `REPORT_CHUNKS` tables must already exist (run `sql/05_cortex_search.sql` steps 5a and 5b beforehand) — but the `COMPLIANCE_REPORTS_SEARCH` service must **not** exist yet (it gets created live in Scene 2 via the UI)
-- Snowflake Notebook `PIPELINE_REVIEW` open in a separate browser tab
-- FrostBank Intelligence Hub app running on port 8080 (`operational_hub_app/build.sh`)
+- Snowflake Notebook `PIPELINE_REVIEW` open in a separate browser tab (upload `sql/pipeline_review.ipynb` if not already present)
+- Reset the Intelligence Hub app: `cd operational_hub_app && ./reset_app.sh` — this empties the Q&A question cards and rebuilds the frontend. Then start the app with `./build.sh`. The app should show **only the metrics dashboard** with no question cards below it. Questions get added live in Scene 3 step 14 via Cortex Code CLI.
 - Terminal open with Cortex Code CLI ready
 - Cortex Code UI open in Snowsight in a separate tab
-- The Intelligence Hub app starts with **no question cards** — only the metrics dashboard. Questions get added live in Scene 3 via Cortex Code CLI.
 
 ### Fallback plan
 
@@ -63,11 +63,11 @@ Women in Data 2026 · 60 minutes · Live demo
 
 8. **Wait for the response.** The agent queries TRANSACTIONS, TRANSACTION_ANOMALIES, PIPELINE_RUNS, and CUSTOMERS, then writes a natural language briefing.
 
-   Expected output (approximate): *"Overnight transaction volume was up 4.2% vs 7-day average across 5 regions. Two anomalies were flagged in EU_WEST. Fraud detection triggered 14 alerts — 11 auto-resolved, 3 escalated. However, the churn risk metric is showing ~813 customers at risk of churn — a significant increase from last quarter's ~330."*
+   Expected output (approximate): *"Overnight transaction volume was up 4.2% vs 7-day average across 5 regions. Two anomalies were flagged in EU_WEST. Fraud detection triggered 14 alerts — 11 auto-resolved, 3 escalated. However, the churn risk metric is showing ~815 customers at risk of churn — a significant increase from last quarter's ~330."*
 
 9. **React visibly. Read the churn line aloud.**
 
-   > "Wait — 813 customers at risk of churn? Last quarter it was around 330. That's a 150% increase. That doesn't make business sense."
+   > "Wait — 815 customers at risk of churn? Last quarter it was around 330. That's a 150% increase. That doesn't make business sense."
 
 10. **Speak to audience:**
 
@@ -83,29 +83,27 @@ Women in Data 2026 · 60 minutes · Live demo
 
 12. **Switch to the Snowflake Notebook** (`PIPELINE_REVIEW`).
 
-13. **Run Cell 2** — the buggy churn query. Output shows **~813 at-risk customers.**
+13. **Run Cell 2** — the buggy churn query. Output shows **~815 at-risk customers.**
 
-    > "There it is. 813. Let's look at the query."
+    > "There it is. 815. But wait — we only have 800 customers. How can 815 be at risk? Let's look closer."
 
-14. **Scroll to the query:**
+14. **Run Cell 4** — the investigation query. Shows view customer count vs raw table counts:
 
-    ```sql
-    SELECT COUNT(*) AS at_risk_customers   -- BUG: counts rows, not distinct customers
-    FROM RETAILBANK_2028.PUBLIC.CUSTOMERS
-    WHERE CHURN_RISK_SCORE > 0.6;
-    ```
+    | view_customer_count | raw_customer_count | raw_account_count | total_rows |
+    |--------------------:|-------------------:|------------------:|-----------:|
+    |               1,989 |                800 |             1,989 |      1,989 |
 
 15. **Speak to audience:**
 
-    > "See it? The AI used COUNT star instead of COUNT DISTINCT. Both run without error. But one customer can have multiple accounts — multiple rows in this table. So COUNT star counts every account row as a separate customer, inflating the result by roughly 2.5x."
+    > "See it? The pipeline view shows 1,989 customers, but the raw data has only 800. And 1,989 matches the number of account IDs. The AI pipeline rebuilt the CUSTOMERS view overnight but mapped ACCOUNT_ID into the CUSTOMER_ID column. Both are integers — no type error. But because one customer can have multiple accounts, treating each account as a separate customer inflated the count by roughly 2.5x."
 
-16. **Run Cell 4** — investigation query. Shows total rows vs unique customers vs unique accounts.
+16. **Run Cell 5** — the fix. Recreates the CUSTOMERS view with the correct CUSTOMER_ID mapping, then verifies. Output: **~325 at-risk customers.**
 
-    > "Look — 1,966 rows but only 800 unique customers. That's the smoking gun. One customer, multiple accounts."
+    > "325. That's in line with last quarter's trend. The semantic view and the agent both read from the CUSTOMERS view — so the fix is already live. No redeployment needed."
 
-17. **Run Cell 5** — the fixed query (uses COUNT DISTINCT CUSTOMER_ID). Output: **~325 at-risk customers.**
+17. **Speak to audience:**
 
-    > "325. That's in line with last quarter's trend. The AI wrote the query correctly in every other way. But it had no business context. It didn't know that one customer can have multiple accounts. That knowledge lives in your head, not in the data."
+    > "The AI wrote the query correctly in every other way. But it had no business context. It didn't know that CUSTOMER_ID and ACCOUNT_ID are different things. That knowledge lives in your head, not in the data."
 
 18. **Key message — speak to audience:**
 
@@ -222,6 +220,9 @@ Women in Data 2026 · 60 minutes · Live demo
     tool_resources:
       BankAnalyst:
         semantic_view: "RETAILBANK_2028.PUBLIC.BANK_ANALYTICS"
+        execution_environment:
+          type: "warehouse"
+          warehouse: "WID_DEMO_WH"
       ComplianceSearch:
         name: "RETAILBANK_2028.PUBLIC.COMPLIANCE_REPORTS_SEARCH"
         max_results: 5

@@ -29,18 +29,7 @@ AGENT_DB = "RETAILBANK_2028"
 AGENT_SCHEMA = "PUBLIC"
 AGENT_NAME = "OPERATIONS_AGENT"
 
-ALLOWED_QUESTIONS = [
-    "What are the top-performing regions by transaction volume this month?",
-    "Break down transaction volumes across all regions for this week",
-    "Which customers are most likely to churn based on current risk scores?",
-    "Are there any unusual patterns in recent transaction data?",
-    "How does our customer base break down by segment and risk level?",
-    "Summarize the latest compliance findings and recommended actions",
-    "Show me the high-value customers with declining activity",
-    "How many fraud alerts were auto-resolved vs escalated to humans?",
-    "What does the AML risk landscape look like across our reports?",
-    "Give me a trend analysis of transaction values over the past week",
-]
+ALLOWED_QUESTIONS = []
 
 _ALLOWED_SET = {q.lower().strip() for q in ALLOWED_QUESTIONS}
 

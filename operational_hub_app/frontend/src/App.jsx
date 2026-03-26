@@ -2,18 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import './App.css'
 import snowflakeLogo from './assets/snowflake-bug-color-rgb.svg'
 
-const QUESTIONS = [
-  { icon: '📊', text: 'What are the top-performing regions by transaction volume this month?' },
-  { icon: '💳', text: 'Break down transaction volumes across all regions for this week' },
-  { icon: '📉', text: 'Which customers are most likely to churn based on current risk scores?' },
-  { icon: '🔍', text: 'Are there any unusual patterns in recent transaction data?' },
-  { icon: '🏦', text: 'How does our customer base break down by segment and risk level?' },
-  { icon: '📋', text: 'Summarize the latest compliance findings and recommended actions' },
-  { icon: '👤', text: 'Show me the high-value customers with declining activity' },
-  { icon: '🛡️', text: 'How many fraud alerts were auto-resolved vs escalated to humans?' },
-  { icon: '⚠️', text: 'What does the AML risk landscape look like across our reports?' },
-  { icon: '📈', text: 'Give me a trend analysis of transaction values over the past week' },
-]
+const QUESTIONS = []
 
 const SnowflakeLogo = () => (
   <img src={snowflakeLogo} alt="Snowflake" width="24" height="24" />

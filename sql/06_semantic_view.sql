@@ -67,9 +67,14 @@ tables:
         default_aggregation: sum
       - name: customer_count
         expr: CUSTOMER_ID
-        description: "Count of unique customers"
+        description: "Count of unique customers. Use COUNT(DISTINCT CUSTOMER_ID) from CUSTOMERS table only — do not join with other tables when counting customers."
         data_type: NUMBER
         default_aggregation: count_distinct
+      - name: high_risk_customer_count
+        expr: "CASE WHEN CHURN_RISK_SCORE > 0.6 THEN 1 ELSE 0 END"
+        description: "Count of customers at risk of churn (score above 0.6). Use SUM of this measure for total at-risk count."
+        data_type: NUMBER
+        default_aggregation: sum
       - name: account_count
         expr: ACCOUNT_ID
         description: "Count of accounts (one customer can have multiple)"
@@ -250,12 +255,27 @@ verified_queries:
       GROUP BY REGION
       ORDER BY total_value DESC
 
+  - name: customers_at_risk_of_churn
+    question: "How many customers are at risk of churn?"
+    sql: >
+      SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk
+      FROM RETAILBANK_2028.PUBLIC.CUSTOMERS
+      WHERE CHURN_RISK_SCORE > 0.6
+
+  - name: morning_briefing_churn
+    question: "What is the number of customers at risk of churn based on current risk scores?"
+    sql: >
+      SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk
+      FROM RETAILBANK_2028.PUBLIC.CUSTOMERS
+      WHERE CHURN_RISK_SCORE > 0.6
+
 custom_instructions: |
   When asked about "top N" accounts or customers, filter using TRANSACTION_VOLUME_RANK <= N.
   When asked about "overnight" data, use the most recent date available.
   Always prefer charts for comparisons and trends.
   Use bar charts for segment comparisons and line charts for time series.
   When asked about fraud alerts, clearly distinguish AUTO_RESOLVED_COUNT from HUMAN_ESCALATED_COUNT.
+  When asked about customers at risk of churn, always use: SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk FROM RETAILBANK_2028.PUBLIC.CUSTOMERS WHERE CHURN_RISK_SCORE > 0.6. Do NOT join with other tables for this query.
 $$;
 
 -- Verify

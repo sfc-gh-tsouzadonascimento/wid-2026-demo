@@ -59,7 +59,7 @@ Women in Data 2026 · 60 minutes · Live demo
 
 7. **Type into Intelligence:**
 
-   > Give me a morning briefing. Summarise overnight transaction activity, any anomalies detected, fraud alert outcomes, and the number of customers at risk of churn.
+   > Give me a one-paragraph morning briefing (4-5 sentences, no bullet points). Cover: overnight transaction volume vs 7-day average, anomalies detected, fraud alert outcomes (auto-resolved vs escalated), and number of customers at risk of churn.
 
 8. **Wait for the response.** The agent queries TRANSACTIONS, TRANSACTION_ANOMALIES, PIPELINE_RUNS, and CUSTOMERS, then writes a natural language briefing.
 

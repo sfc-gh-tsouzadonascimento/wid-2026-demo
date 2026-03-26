@@ -14,9 +14,14 @@
 --   4. Re-anchors CUSTOMER last_activity_date
 --   5. Redistributes CHURN_RISK_SCORE so ~325 distinct customers are above 0.6
 --      (producing ~815 via buggy view — the demo's target numbers)
+--  5b. Flips any FAILED/RESTARTED pipeline runs to SUCCESS (dashboard all-green)
+--  5c. Sets latest-day PCT_CHANGE_VS_7DAY_AVG positive (dashboard all-green)
 --   6. Ensures CUSTOMERS_RAW table exists and creates buggy CUSTOMERS VIEW
 --      (pipeline confused account_id with customer_id — the bug the notebook
 --      discovers and fixes)
+--  6b. Recreates semantic view BANK_ANALYTICS with high_risk_customer_count
+--      measure, churn-specific custom instructions, and verified queries so
+--      Snowflake Intelligence reliably returns the buggy inflated churn count
 --   7. Recreates OPERATIONS_AGENT with BankAnalyst only (no ComplianceSearch —
 --      that gets added live in Scene 2)
 --   8. Drops COMPLIANCE_REPORTS_SEARCH service (gets created live in Scene 2)
@@ -110,6 +115,23 @@ USING (
 ON tgt.CUSTOMER_ID = src.CUSTOMER_ID
 WHEN MATCHED THEN UPDATE SET tgt.CHURN_RISK_SCORE = src.new_score;
 
+-- ─── 5b. Ensure all pipeline runs are SUCCESS ───────────────────────────────
+-- The dashboard shows pipeline_success_rate with a green arrow only when >= 95%.
+-- Flip any FAILED or RESTARTED runs to SUCCESS so the dashboard is all-green.
+
+UPDATE RETAILBANK_2028.PUBLIC.PIPELINE_RUNS
+SET STATUS = 'SUCCESS'
+WHERE STATUS IN ('FAILED', 'RESTARTED');
+
+-- ─── 5c. Ensure latest-day pct_change is positive ──────────────────────────
+-- The dashboard shows daily_pct_change with a green arrow only when > 0.
+-- Set all latest-day PCT_CHANGE_VS_7DAY_AVG to a small positive value so the
+-- average is positive and the dashboard is all-green.
+
+UPDATE RETAILBANK_2028.PUBLIC.TRANSACTIONS
+SET PCT_CHANGE_VS_7DAY_AVG = ROUND(UNIFORM(1.5::FLOAT, 8.0::FLOAT, RANDOM()), 2)
+WHERE TRANSACTION_DATE = (SELECT MAX(TRANSACTION_DATE) FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS);
+
 -- ─── 6. Create buggy CUSTOMERS view ────────────────────────────────────────
 -- The "overnight AI pipeline" rebuilt the CUSTOMERS view but mapped
 -- ACCOUNT_ID into the CUSTOMER_ID position.  This inflates
@@ -132,6 +154,50 @@ SELECT
     ACCOUNT_OPEN_DATE,
     TRANSACTION_VOLUME_RANK
 FROM RETAILBANK_2028.PUBLIC.CUSTOMERS_RAW;
+
+-- ─── 6b. Recreate semantic view BANK_ANALYTICS ──────────────────────────────
+-- The semantic view must have:
+--   - high_risk_customer_count measure (CASE WHEN > 0.6 THEN 1 ELSE 0 END)
+--   - custom_instruction telling Cortex Analyst NOT to join tables for churn count
+--   - verified queries anchoring churn count to the CUSTOMERS view
+-- This ensures Snowflake Intelligence returns the buggy-view-inflated churn
+-- number (~815) rather than the real count (~325).
+--
+-- NOTE: Uses native DDL format (not YAML $$) so it works via snowflake_sql_execute.
+-- When running via Snowsight worksheet, you can run this statement as-is.
+
+CREATE OR REPLACE SEMANTIC VIEW RETAILBANK_2028.PUBLIC.BANK_ANALYTICS
+	tables (
+		RETAILBANK_2028.PUBLIC.CUSTOMERS comment='Customer accounts with churn risk scores and segmentation. One customer (CUSTOMER_ID) can have multiple accounts (ACCOUNT_ID).',
+		RETAILBANK_2028.PUBLIC.TRANSACTIONS comment='Daily transaction aggregates by region over 90 days',
+		ANOMALIES as RETAILBANK_2028.PUBLIC.TRANSACTION_ANOMALIES comment='ML-detected anomalies from Snowflake ANOMALY_DETECTION model',
+		RETAILBANK_2028.PUBLIC.PIPELINE_RUNS comment='Log of automated pipeline executions including fraud alert results'
+	)
+	dimensions (
+		CUSTOMERS.CUSTOMER_NAME as CUSTOMER_NAME comment='Customer full name',
+		CUSTOMERS.SEGMENT as SEGMENT comment='Customer segment: RETAIL, SMB, CORPORATE, HIGH_NET_WORTH, PRIVATE_BANKING',
+		CUSTOMERS.REGION as REGION comment='Customer region: EU_WEST, NA_EAST, APAC, LATAM, EU_NORTH',
+		CUSTOMERS.ACCOUNT_OPEN_DATE as ACCOUNT_OPEN_DATE comment='Date the account was opened',
+		CUSTOMERS.LAST_ACTIVITY_DATE as LAST_ACTIVITY_DATE comment='Date of last account activity',
+		CUSTOMERS.TRANSACTION_VOLUME_RANK as TRANSACTION_VOLUME_RANK comment='Rank by monthly transaction volume (1 = highest). Filter top N with WHERE transaction_volume_rank <= N.',
+		TRANSACTIONS.TRANSACTION_DATE as TRANSACTION_DATE comment='Date of transactions',
+		TRANSACTIONS.TXN_REGION as REGION comment='Region: EU_WEST, NA_EAST, APAC, LATAM, EU_NORTH',
+		ANOMALIES.ANOMALY_DATE as TS comment='Timestamp of the observation',
+		ANOMALIES.ANOMALY_REGION as SERIES comment='Region where anomaly was evaluated',
+		ANOMALIES.IS_ANOMALY as IS_ANOMALY comment='TRUE if the ML model flagged this as anomalous',
+		PIPELINE_RUNS.PIPELINE_NAME as PIPELINE_NAME comment='Name of the pipeline',
+		PIPELINE_RUNS.RUN_TIMESTAMP as RUN_TIMESTAMP comment='When the pipeline ran',
+		PIPELINE_RUNS.STATUS as STATUS comment='Pipeline status: SUCCESS, FAILED, RESTARTED',
+		PIPELINE_RUNS.IS_AI_GENERATED as AI_GENERATED comment='Whether the pipeline was AI-generated'
+	)
+	comment='RetailBank 2028 analytics covering daily transactions by region, customer segments with churn risk, ML-detected anomalies, and pipeline execution logs including fraud alert monitoring.'
+	ai_sql_generation 'When asked about "top N" accounts or customers, filter using TRANSACTION_VOLUME_RANK <= N.
+When asked about "overnight" data, use the most recent date available.
+Always prefer charts for comparisons and trends.
+Use bar charts for segment comparisons and line charts for time series.
+When asked about fraud alerts, clearly distinguish AUTO_RESOLVED_COUNT from HUMAN_ESCALATED_COUNT.
+When asked about customers at risk of churn, always use: SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk FROM RETAILBANK_2028.PUBLIC.CUSTOMERS WHERE CHURN_RISK_SCORE > 0.6. Do NOT join with other tables for this query.'
+	with extension (CA='{"tables":[{"name":"customers","dimensions":[{"name":"customer_name"},{"name":"segment"},{"name":"region"},{"name":"account_open_date"},{"name":"last_activity_date"},{"name":"transaction_volume_rank"}],"measures":[{"name":"churn_risk_score","expr":"CHURN_RISK_SCORE","description":"Churn risk 0.00-1.00. Above 0.6 is high risk.","data_type":"DECIMAL","default_aggregation":"avg"},{"name":"monthly_transaction_volume","expr":"MONTHLY_TRANSACTION_VOLUME","description":"Monthly transaction volume count","data_type":"NUMBER","default_aggregation":"sum"},{"name":"customer_count","expr":"CUSTOMER_ID","description":"Count of unique customers. Use COUNT(DISTINCT CUSTOMER_ID) from CUSTOMERS table only — do not join with other tables when counting customers.","data_type":"NUMBER","default_aggregation":"count_distinct"},{"name":"high_risk_customer_count","expr":"CASE WHEN CHURN_RISK_SCORE > 0.6 THEN 1 ELSE 0 END","description":"Count of customers at risk of churn (score above 0.6). Use SUM of this measure for total at-risk count.","data_type":"NUMBER","default_aggregation":"sum"},{"name":"account_count","expr":"ACCOUNT_ID","description":"Count of accounts (one customer can have multiple)","data_type":"NUMBER","default_aggregation":"count_distinct"}]},{"name":"transactions","dimensions":[{"name":"transaction_date"},{"name":"txn_region"}],"measures":[{"name":"transaction_count","expr":"TRANSACTION_COUNT","description":"Number of transactions on this date in this region","data_type":"NUMBER","default_aggregation":"sum"},{"name":"transaction_value","expr":"TRANSACTION_VALUE","description":"Total monetary value of transactions","data_type":"DECIMAL","default_aggregation":"sum"},{"name":"avg_transaction_value","expr":"AVG_TRANSACTION_VALUE","description":"Average transaction value for the date/region","data_type":"DECIMAL","default_aggregation":"avg"},{"name":"pct_change","expr":"PCT_CHANGE_VS_7DAY_AVG","description":"Percentage change vs 7-day rolling average","data_type":"DECIMAL","default_aggregation":"avg"}]},{"name":"anomalies","dimensions":[{"name":"anomaly_date"},{"name":"anomaly_region"},{"name":"is_anomaly"}],"measures":[{"name":"actual_value","expr":"Y","description":"Actual transaction count","data_type":"NUMBER","default_aggregation":"sum"},{"name":"forecast_value","expr":"FORECAST","description":"ML model forecast value","data_type":"FLOAT","default_aggregation":"avg"},{"name":"upper_bound","expr":"UPPER_BOUND","description":"Upper prediction interval bound","data_type":"FLOAT","default_aggregation":"avg"},{"name":"lower_bound","expr":"LOWER_BOUND","description":"Lower prediction interval bound","data_type":"FLOAT","default_aggregation":"avg"},{"name":"anomaly_count","expr":"CASE WHEN IS_ANOMALY THEN 1 ELSE 0 END","description":"Count of anomalies","data_type":"NUMBER","default_aggregation":"sum"}]},{"name":"pipeline_runs","dimensions":[{"name":"pipeline_name"},{"name":"run_timestamp"},{"name":"status"},{"name":"is_ai_generated"}],"measures":[{"name":"duration_seconds","expr":"DURATION_SECONDS","description":"Pipeline run duration in seconds","data_type":"NUMBER","default_aggregation":"avg"},{"name":"records_processed","expr":"RECORDS_PROCESSED","description":"Number of records processed","data_type":"NUMBER","default_aggregation":"sum"},{"name":"auto_resolved_count","expr":"AUTO_RESOLVED_COUNT","description":"Fraud alerts auto-resolved by the system (NOT human-escalated)","data_type":"NUMBER","default_aggregation":"sum"},{"name":"human_escalated_count","expr":"HUMAN_ESCALATED_COUNT","description":"Fraud alerts escalated to human review (NOT auto-resolved)","data_type":"NUMBER","default_aggregation":"sum"}]}],"verified_queries":[{"name":"churn_risk_by_segment_top50","question":"Which customer segments have the highest churn risk among top 50 accounts?","sql":"SELECT SEGMENT, AVG(CHURN_RISK_SCORE) AS avg_churn_risk, COUNT(DISTINCT CUSTOMER_ID) AS customer_count FROM RETAILBANK_2028.PUBLIC.CUSTOMERS WHERE TRANSACTION_VOLUME_RANK <= 50 GROUP BY SEGMENT ORDER BY avg_churn_risk DESC"},{"name":"overnight_anomalies","question":"Show me overnight anomalies detected by the ML model","sql":"SELECT TS, SERIES AS region, Y AS actual, FORECAST, UPPER_BOUND, LOWER_BOUND, IS_ANOMALY FROM RETAILBANK_2028.PUBLIC.TRANSACTION_ANOMALIES WHERE IS_ANOMALY = TRUE ORDER BY TS DESC"},{"name":"fraud_alert_counts","question":"Show me the raw fraud alert counts from last night","sql":"SELECT PIPELINE_NAME, RUN_TIMESTAMP, AUTO_RESOLVED_COUNT, HUMAN_ESCALATED_COUNT FROM RETAILBANK_2028.PUBLIC.PIPELINE_RUNS WHERE PIPELINE_NAME = ''FRAUD_ALERT_MONITOR'' ORDER BY RUN_TIMESTAMP DESC LIMIT 1"},{"name":"transaction_value_by_region_7d","question":"Total transaction value by region for the last 7 days","sql":"SELECT REGION, SUM(TRANSACTION_VALUE) AS total_value FROM RETAILBANK_2028.PUBLIC.TRANSACTIONS WHERE TRANSACTION_DATE >= CURRENT_DATE() - 7 GROUP BY REGION ORDER BY total_value DESC"},{"name":"customers_at_risk_of_churn","question":"How many customers are at risk of churn?","sql":"SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk FROM RETAILBANK_2028.PUBLIC.CUSTOMERS WHERE CHURN_RISK_SCORE > 0.6"},{"name":"morning_briefing_churn","question":"What is the number of customers at risk of churn based on current risk scores?","sql":"SELECT COUNT(DISTINCT CUSTOMER_ID) AS customers_at_risk FROM RETAILBANK_2028.PUBLIC.CUSTOMERS WHERE CHURN_RISK_SCORE > 0.6"}]}');
 
 -- ─── 7. Recreate agent WITHOUT ComplianceSearch ─────────────────────────────
 -- Scene 2 adds ComplianceSearch live during the demo.  The reset state

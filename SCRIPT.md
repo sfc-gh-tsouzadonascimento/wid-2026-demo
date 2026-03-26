@@ -346,7 +346,7 @@ Women in Data 2026 · 60 minutes · Live demo
 14. **Type the prompt:**
 
     ```
-    cortex code "In the FrostBank Intelligence Hub app (operational_hub_app), add an interactive Q&A section below the dashboard. In frontend/src/App.jsx, populate the QUESTIONS array with these 10 question objects, each with an icon and text property: 1) icon '📊' text 'What are the top-performing regions by transaction volume this month?' 2) icon '💳' text 'Break down transaction volumes across all regions for this week' 3) icon '📉' text 'Which customers are most likely to churn based on current risk scores?' 4) icon '🔍' text 'Are there any unusual patterns in recent transaction data?' 5) icon '🏦' text 'How does our customer base break down by segment and risk level?' 6) icon '📋' text 'Summarize the latest compliance findings and recommended actions' 7) icon '👤' text 'Show me the high-value customers with declining activity' 8) icon '🛡️' text 'How many fraud alerts were auto-resolved vs escalated to humans?' 9) icon '⚠️' text 'What does the AML risk landscape look like across our reports?' 10) icon '📈' text 'Give me a trend analysis of transaction values over the past week'. Also in app.py, add all 10 question texts to the ALLOWED_QUESTIONS list."
+    Read operational_hub_app/questions.txt and add each question as a clickable card with a fitting emoji icon to the QUESTIONS array in frontend/src/App.jsx and to ALLOWED_QUESTIONS in app.py.
     ```
 
 15. **Cortex Code CLI generates the diff.** Review it briefly — the audience sees the questions being added to both frontend and backend. Accept.

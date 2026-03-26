@@ -77,8 +77,9 @@ tool_resources:
     execution_environment:
       type: "warehouse"
       warehouse: "WID_DEMO_WH"
+      query_timeout: 299
   ComplianceSearch:
-    name: "RETAILBANK_2028.PUBLIC.COMPLIANCE_REPORTS_SEARCH"
+    search_service: "RETAILBANK_2028.PUBLIC.COMPLIANCE_REPORTS_SEARCH"
     max_results: 5
     title_column: "file_name"
     id_column: "doc_chunk_id"

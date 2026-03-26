@@ -60,7 +60,7 @@ SELECT * FROM TABLE(RESULT_SCAN(LAST_QUERY_ID()));
 SELECT
     TS,
     SERIES AS region,
-    TARGET_VALUE AS actual_count,
+    Y AS actual_count,
     ROUND(FORECAST, 0) AS forecast_count,
     ROUND(UPPER_BOUND, 0) AS upper_bound,
     ROUND(LOWER_BOUND, 0) AS lower_bound,

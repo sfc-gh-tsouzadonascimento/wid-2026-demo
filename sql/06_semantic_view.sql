@@ -134,7 +134,7 @@ tables:
         data_type: BOOLEAN
     measures:
       - name: actual_value
-        expr: TARGET_VALUE
+        expr: "Y"
         description: "Actual transaction count"
         data_type: NUMBER
         default_aggregation: sum
@@ -226,7 +226,7 @@ verified_queries:
   - name: overnight_anomalies
     question: "Show me overnight anomalies detected by the ML model"
     sql: >
-      SELECT TS, SERIES AS region, TARGET_VALUE AS actual, FORECAST,
+      SELECT TS, SERIES AS region, Y AS actual, FORECAST,
              UPPER_BOUND, LOWER_BOUND, IS_ANOMALY
       FROM RETAILBANK_2028.PUBLIC.TRANSACTION_ANOMALIES
       WHERE IS_ANOMALY = TRUE

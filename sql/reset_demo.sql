@@ -185,6 +185,7 @@ tool_resources:
     execution_environment:
       type: "warehouse"
       warehouse: "WID_DEMO_WH"
+      query_timeout: 299
 $$;
 
 -- ─── 8. Drop Cortex Search service ─────────────────────────────────────────
